@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Retention Portal — Time Internet</title>
+  
+  <!-- SEO Meta Tags -->
+  <meta name="description" content="Time Internet Internal Customer Retention Portal. Optimize expirations, search customers, and generate AI recontract pitches.">
+  
+  <!-- Fonts & Icons -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- Styling -->
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="dark-theme">
+
+  <!-- Main Portal Layout -->
+  <div class="app-container">
+    
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="logo-area">
+        <div class="logo-icon"><i class="fa-solid fa-bolt"></i></div>
+        <span class="logo-text">TIME <span>retention</span></span>
+      </div>
+      
+      <nav class="nav-menu">
+        <button id="tab-search-btn" class="nav-item active" onclick="switchTab('search')">
+          <i class="fa-solid fa-users"></i>
+          <span>Customers</span>
+        </button>
+        <button id="tab-jobs-btn" class="nav-item" onclick="switchTab('jobs')">
+          <i class="fa-solid fa-list-check"></i>
+          <span>Bulk Jobs</span>
+          <span id="active-jobs-badge" class="badge-dot hidden"></span>
+        </button>
+      </nav>
+      
+      <div class="user-profile">
+        <div class="avatar"><i class="fa-solid fa-user-tie"></i></div>
+        <div class="user-info">
+          <div class="user-name">Retention Agent</div>
+          <div class="user-role">Senior Associate</div>
+        </div>
+      </div>
+    </aside>
+    
+    <!-- Main Content Area -->
+    <main class="main-content">
+      
+      <!-- Tab 1: Customer Workspace -->
+      <section id="tab-search" class="tab-pane active">
+        <header class="content-header">
+          <div>
+            <h1>Customer Workspace</h1>
+            <p class="subtitle">Search customers approaching contract expiry and generate personalized pitches</p>
+          </div>
+          <button id="bulk-pitch-trigger-btn" class="btn btn-primary" onclick="openBulkModal()">
+            <i class="fa-solid fa-wand-magic-sparkles"></i>
+            <span>Run Bulk Pitch</span>
+          </button>
+        </header>
+        
+        <!-- Filter Bar -->
+        <div class="filter-card card">
+          <div class="search-box">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input type="text" id="search-input" placeholder="Search customer by name..." oninput="debounceSearch()">
+          </div>
+          
+          <div class="filter-group">
+            <div class="filter-item">
+              <label for="plan-filter">Plan Name</label>
+              <select id="plan-filter" onchange="applyFilters()">
+                <option value="">All Plans</option>
+                <option value="100Mbps">100Mbps</option>
+                <option value="500Mbps">500Mbps</option>
+                <option value="1Gbps">1Gbps</option>
+                <option value="2Gbps">2Gbps</option>
+              </select>
+            </div>
+            
+            <div class="filter-item">
+              <label for="expiry-filter">Expires Before</label>
+              <input type="date" id="expiry-filter" onchange="applyFilters()">
+            </div>
+            
+            <button class="btn btn-secondary-icon" onclick="resetFilters()" title="Reset Filters">
+              <i class="fa-solid fa-rotate-left"></i>
+            </button>
+          </div>
+        </div>
+        
+        <!-- Table Card -->
+        <div class="table-card card">
+          <div class="table-wrapper">
+            <table id="customers-table">
+              <thead>
+                <tr>
+                  <th>Customer ID</th>
+                  <th>Full Name</th>
+                  <th>Current Plan</th>
+                  <th>Contract Expiration</th>
+                  <th class="actions-col">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="customers-tbody">
+                <!-- Loaded dynamically -->
+              </tbody>
+            </table>
+          </div>
+          
+          <!-- Pagination -->
+          <div class="pagination-bar">
+            <span class="pagination-info" id="pagination-info">Showing list...</span>
+            <div class="pagination-buttons">
+              <button id="prev-btn" class="btn btn-secondary btn-sm" onclick="prevPage()" disabled>
+                <i class="fa-solid fa-chevron-left"></i> Prev
+              </button>
+              <button id="next-btn" class="btn btn-secondary btn-sm" onclick="nextPage()" disabled>
+                Next <i class="fa-solid fa-chevron-right"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+      
+      <!-- Tab 2: Bulk Jobs Tracker -->
+      <section id="tab-jobs" class="tab-pane">
+        <header class="content-header">
+          <div>
+            <h1>Bulk Jobs Tracker</h1>
+            <p class="subtitle">Monitor asynchronous bulk pitch generation campaigns and completion rates</p>
+          </div>
+          <button class="btn btn-secondary" onclick="loadJobsList()">
+            <i class="fa-solid fa-arrows-rotate"></i> Refresh
+          </button>
+        </header>
+        
+        <!-- Jobs Grid -->
+        <div class="jobs-list" id="jobs-list-container">
+          <!-- Loaded dynamically -->
+        </div>
+      </section>
+      
+    </main>
+    
+  </div>
+
+  <!-- Customer Detail Drawer -->
+  <div id="customer-drawer" class="drawer-overlay hidden" onclick="closeDrawer(event)">
+    <div class="drawer" onclick="event.stopPropagation()">
+      <button class="drawer-close" onclick="closeDrawer(null)"><i class="fa-solid fa-xmark"></i></button>
+      
+      <div class="drawer-header">
+        <h2 id="drawer-customer-name">---</h2>
+        <span class="badge" id="drawer-customer-plan">---</span>
+      </div>
+      
+      <div class="drawer-body">
+        
+        <!-- Detail Grid -->
+        <div class="drawer-section">
+          <h3>Customer Profile</h3>
+          <div class="detail-grid">
+            <div class="detail-item">
+              <span class="label">Customer Number</span>
+              <span class="value" id="drawer-cust-number">---</span>
+            </div>
+            <div class="detail-item">
+              <span class="label">Monthly Fee</span>
+              <span class="value" id="drawer-cust-fee">---</span>
+            </div>
+            <div class="detail-item">
+              <span class="label">Tenure (Months)</span>
+              <span class="value" id="drawer-cust-tenure">---</span>
+            </div>
+            <div class="detail-item">
+              <span class="label">Contract Expiry</span>
+              <span class="value" id="drawer-cust-expiry">---</span>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Usage History Chart -->
+        <div class="drawer-section">
+          <h3>Internet Usage Trend (Last 3 Months)</h3>
+          <div class="usage-trend-container" id="drawer-usage-container">
+            <!-- Custom bars generated dynamically -->
+          </div>
+        </div>
+        
+        <!-- Generated Pitch Card -->
+        <div class="drawer-section">
+          <div class="section-header-action">
+            <h3>Sales Pitch Generator</h3>
+            <span id="pitch-cache-badge" class="badge badge-success hidden"><i class="fa-solid fa-bolt"></i> Cached</span>
+            <span id="pitch-fresh-badge" class="badge badge-purple hidden"><i class="fa-solid fa-sparkles"></i> AI Generated</span>
+          </div>
+          
+          <div class="pitch-container" id="pitch-box">
+            <div class="pitch-placeholder" id="pitch-placeholder">
+              <i class="fa-solid fa-wand-magic-sparkles"></i>
+              <p>Click Generate below to create a personalized, LLM-driven recontracting pitch referencing this customer's actual data.</p>
+              <button class="btn btn-primary" id="generate-pitch-btn" onclick="generatePitch()">
+                Generate Pitch
+              </button>
+            </div>
+            
+            <div class="pitch-content hidden" id="pitch-content-wrapper">
+              <pre id="pitch-text"></pre>
+              <button class="btn btn-secondary-icon btn-copy" onclick="copyPitch()" title="Copy to Clipboard">
+                <i class="fa-regular fa-copy"></i> Copy
+              </button>
+            </div>
+            
+            <div class="pitch-loading hidden" id="pitch-spinner">
+              <div class="spinner"></div>
+              <p>Consulting LLM engine...</p>
+            </div>
+          </div>
+        </div>
+        
+      </div>
+    </div>
+  </div>
+
+  <!-- Bulk Pitch Confirmation Modal -->
+  <div id="bulk-modal" class="modal-overlay hidden" onclick="closeBulkModal(event)">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h2>Initiate Bulk Pitch Generation</h2>
+        <button class="modal-close" onclick="closeBulkModal(null)"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      
+      <div class="modal-body">
+        <p>You are about to queue background workers to generate pitches for all customers matching the active filters:</p>
+        
+        <div class="modal-filters-summary">
+          <div class="summary-row">
+            <span class="label">Plan:</span>
+            <span class="value" id="modal-filter-plan">All</span>
+          </div>
+          <div class="summary-row">
+            <span class="label">Expires Before:</span>
+            <span class="value" id="modal-filter-expiry">Any Date</span>
+          </div>
+        </div>
+        
+        <div class="info-callout">
+          <i class="fa-solid fa-circle-info"></i>
+          <div>
+            <p><strong>Database & LLM Optimizations:</strong></p>
+            <p>Our backend uses bounded worker pools (10 workers) and token bucket rate limits to prevent database lockups. It leverages write-through caches to skip LLM generation if customer data hasn't changed.</p>
+          </div>
+        </div>
+        
+        <div id="bulk-queue-error" class="error-msg hidden"></div>
+      </div>
+      
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeBulkModal(null)">Cancel</button>
+        <button class="btn btn-primary" onclick="submitBulkJob()">
+          <i class="fa-solid fa-play"></i> Start Background Job
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Job Items Modal -->
+  <div id="items-modal" class="modal-overlay hidden" onclick="closeItemsModal(event)">
+    <div class="modal modal-lg" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h2>Job Processing Log (<span id="items-modal-job-id"></span>)</h2>
+        <button class="modal-close" onclick="closeItemsModal(null)"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      
+      <div class="modal-body">
+        <div class="items-filter-bar">
+          <button class="tab-sub active" id="item-filter-all" onclick="filterJobItems('')">All Items</button>
+          <button class="tab-sub text-success" id="item-filter-success" onclick="filterJobItems('SUCCESS')">Success</button>
+          <button class="tab-sub text-danger" id="item-filter-failed" onclick="filterJobItems('FAILED')">Failed</button>
+        </div>
+        
+        <div class="table-wrapper modal-table-wrapper">
+          <table id="job-items-table">
+            <thead>
+              <tr>
+                <th>Customer ID</th>
+                <th>Status</th>
+                <th>Failure Reason / Note</th>
+              </tr>
+            </thead>
+            <tbody id="job-items-tbody">
+              <!-- Loaded dynamically -->
+            </tbody>
+          </table>
+        </div>
+        
+        <div class="modal-pagination">
+          <button class="btn btn-secondary btn-sm" id="item-prev-btn" onclick="prevJobItems()">Prev</button>
+          <button class="btn btn-secondary btn-sm" id="item-next-btn" onclick="nextJobItems()">Next</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
