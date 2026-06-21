@@ -9,10 +9,10 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
+	"time-retention/internal/config"
 	"time-retention/internal/models"
 )
 
@@ -49,7 +49,7 @@ func ComputeCustomerHash(details *models.CustomerDetails) string {
 // GeneratePitch creates a personalized pitch for a customer.
 // It will call Google Gemini if GEMINI_API_KEY is available, or fall back to an offline template-based pitch generator.
 func GeneratePitch(ctx context.Context, details *models.CustomerDetails) (string, string, error) {
-	apiKey := os.Getenv("GEMINI_API_KEY")
+	apiKey := config.AppConfig.GeminiAPIKey
 
 	// Calculate averages
 	var totalDownload, totalUpload float64
@@ -76,14 +76,19 @@ Customer Details:
 Be professional and compelling. Highlight the benefits of recontracting now.`,
 		avgDownload, avgUpload, details.FullName, details.PlanName, details.MonthlyFee, details.TenureMonths, details.ContractEndDate)
 
+	model := config.AppConfig.LLMModel
+	if model == "" {
+		model = "gemini-1.5-flash"
+	}
+
 	if apiKey == "" {
 		// Use Mock generator
 		pitch := generateMockPitch(details, avgDownload, avgUpload)
-		return pitch, "mock-gemini-1.5-flash", nil
+		return pitch, "mock-" + model, nil
 	}
 
 	// Call Google Gemini API
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=%s", apiKey)
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", model, apiKey)
 	
 	reqBody, err := json.Marshal(map[string]interface{}{
 		"contents": []interface{}{
@@ -118,7 +123,7 @@ Be professional and compelling. Highlight the benefits of recontracting now.`,
 	if resp.StatusCode != http.StatusOK {
 		respBytes, _ := io.ReadAll(resp.Body)
 		log.Printf("Gemini API error (HTTP %d): %s. Falling back to mock generator.", resp.StatusCode, string(respBytes))
-		return generateMockPitch(details, avgDownload, avgUpload), "mock-gemini-1.5-flash", nil
+		return generateMockPitch(details, avgDownload, avgUpload), "mock-" + model, nil
 	}
 
 	var geminiResp GeminiResponse
@@ -128,7 +133,7 @@ Be professional and compelling. Highlight the benefits of recontracting now.`,
 
 	if len(geminiResp.Candidates) > 0 && len(geminiResp.Candidates[0].Content.Parts) > 0 {
 		pitchText := strings.TrimSpace(geminiResp.Candidates[0].Content.Parts[0].Text)
-		return pitchText, "gemini-1.5-flash", nil
+		return pitchText, model, nil
 	}
 
 	return "", "", fmt.Errorf("empty response received from Gemini API")

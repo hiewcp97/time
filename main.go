@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"time-retention/internal/config"
 	"time-retention/internal/db"
 	"time-retention/internal/server"
 	"time-retention/internal/worker"
@@ -15,28 +16,14 @@ import (
 )
 
 func main() {
+	config.Load()
 	log.Println("Starting Retention Agent Platform...")
 
-	// 1. Get configurations from environment
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://postgres:postgres@db:5432/retention?sslmode=disable"
-	}
-
-	redisURL := os.Getenv("REDIS_URL")
-	if redisURL == "" {
-		redisURL = "redis:6379"
-	}
-
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
-
-	role := os.Getenv("ROLE")
-	if role == "" {
-		role = "both" // Default to running both HTTP server and workers in same container for simplicity
-	}
+	// 1. Get configurations from config library
+	dbURL := config.AppConfig.DatabaseURL
+	redisURL := config.AppConfig.RedisURL
+	port := config.AppConfig.Port
+	role := config.AppConfig.Role
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

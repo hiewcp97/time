@@ -1,0 +1,8 @@
+{
+  "database_url": "postgres://postgres:postgres@localhost:5432/retention?sslmode=disable",
+  "redis_url": "localhost:6379",
+  "port": "8080",
+  "gemini_api_key": "",
+  "llm_model": "gemini-1.5-flash",
+  "role": "both"
+}

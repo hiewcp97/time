@@ -33,7 +33,8 @@ services:
       REDIS_URL: redis:6379
       ROLE: api
       PORT: 8080
-      GEMINI_API_KEY: "" # Provide your Google Gemini API key to enable actual LLM generations
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      LLM_MODEL: ${LLM_MODEL}
     depends_on:
       db:
         condition: service_healthy
@@ -46,7 +47,8 @@ services:
       DATABASE_URL: postgres://postgres:postgres@db:5432/retention?sslmode=disable
       REDIS_URL: redis:6379
       ROLE: worker
-      GEMINI_API_KEY: "" # Provide your Google Gemini API key to enable actual LLM generations
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      LLM_MODEL: ${LLM_MODEL}
     depends_on:
       db:
         condition: service_healthy

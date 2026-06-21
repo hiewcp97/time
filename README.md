@@ -16,7 +16,38 @@ An internal customer retention portal built for scale to help retention agents b
    ```
 2. Wait a few seconds for database startup and bootstrap. The system will automatically seed **500,000 customers** and **1,500,000 usage history records** on first-time boot. Seeding takes ~15–20 seconds.
 3. Open `http://localhost:8080` in your web browser.
-4. (Optional) To connect actual LLM endpoints rather than local mock templates, provide your `GEMINI_API_KEY` in the `docker-compose.yml` environment variables.
+4. (Optional) To connect actual LLM endpoints rather than local mock templates, configure your API Key and target model in the `config.json` file, or via environment variables.
+
+---
+
+## 1.5 Configuration Management
+
+The system loads settings using a multi-tiered configuration manager with the following order of precedence (highest to lowest):
+
+1. **OS Environment Variables** (Highest precedence, typically set in `docker-compose.yml` or container hosts).
+2. **`config.json`** (Local JSON configuration file located at the project root).
+3. **`.env`** (Environment file containing local fallback configurations).
+4. **Hardcoded Defaults** (e.g., `gemini-1.5-flash` model and default port `8080`).
+
+### Configuration Schema (`config.json`)
+```json
+{
+  "database_url": "postgres://postgres:postgres@localhost:5432/retention?sslmode=disable",
+  "redis_url": "localhost:6379",
+  "port": "8080",
+  "gemini_api_key": "YOUR_GEMINI_API_KEY",
+  "llm_model": "gemini-1.5-flash",
+  "role": "both"
+}
+```
+
+### Supported Parameters
+- `database_url` / `DATABASE_URL`: Connection string for PostgreSQL.
+- `redis_url` / `REDIS_URL`: Connection details for Redis.
+- `port` / `PORT`: Port for the API server (default `8080`).
+- `gemini_api_key` / `GEMINI_API_KEY`: Google Gemini API Key. If left empty, the application falls back to a template-based mock pitch generator.
+- `llm_model` / `LLM_MODEL`: The Gemini model to target (e.g. `gemini-1.5-flash`, `gemini-1.5-pro`).
+- `role` / `ROLE`: Node execution role (`api`, `worker`, or `both`).
 
 ---
 

@@ -28,6 +28,8 @@ COPY --from=builder /app/server .
 # Copy static assets and DB bootstrap folders
 COPY --from=builder /app/static ./static
 COPY --from=builder /app/db ./db
+COPY --from=builder /app/.env* ./
+COPY --from=builder /app/config.json* ./
 
 EXPOSE 8080
 
