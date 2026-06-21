@@ -31,8 +31,25 @@ var RateLimiter = time.Tick(200 * time.Millisecond)
 
 // StartWorkerPool runs the background workers and the job coordinator.
 func StartWorkerPool(ctx context.Context, dbPool *pgxpool.Pool, rdb *redis.Client) {
-	// Reset orphaned PROCESSING jobs back to PENDING on startup so they resume processing
-	_, err := dbPool.Exec(ctx, "UPDATE bulk_jobs SET status = 'PENDING' WHERE status = 'PROCESSING'")
+	// 1. Reset unfinished/processing items back to PENDING on startup so they resume processing
+	_, err := dbPool.Exec(ctx, "UPDATE bulk_job_items SET status = 'PENDING' WHERE status = 'PROCESSING'")
+	if err != nil {
+		log.Printf("Worker Pool Startup: Failed to reset orphaned processing items: %v", err)
+	}
+
+	// 2. Recalculate and sync completed/failed counters for all active/pending jobs to ensure accuracy
+	_, err = dbPool.Exec(ctx, `
+		UPDATE bulk_jobs bj
+		SET 
+			completed_count = COALESCE((SELECT COUNT(*) FROM bulk_job_items bji WHERE bji.bulk_job_id = bj.id AND bji.status = 'SUCCESS'), 0),
+			failed_count = COALESCE((SELECT COUNT(*) FROM bulk_job_items bji WHERE bji.bulk_job_id = bj.id AND bji.status = 'FAILED'), 0)
+		WHERE bj.status = 'PROCESSING' OR bj.status = 'PENDING'`)
+	if err != nil {
+		log.Printf("Worker Pool Startup: Failed to sync job counters: %v", err)
+	}
+
+	// 3. Reset orphaned PROCESSING jobs back to PENDING on startup so they resume processing
+	_, err = dbPool.Exec(ctx, "UPDATE bulk_jobs SET status = 'PENDING' WHERE status = 'PROCESSING'")
 	if err != nil {
 		log.Printf("Worker Pool Startup: Failed to reset orphaned processing jobs: %v", err)
 	}
@@ -76,15 +93,26 @@ func runCoordinator(ctx context.Context, dbPool *pgxpool.Pool) {
 
 			// Read and dispatch pending items in chunks of 100
 			for {
-				rows, err := dbPool.Query(ctx, 
-					"SELECT customer_id FROM bulk_job_items WHERE bulk_job_id = $1 AND status = 'PENDING' ORDER BY id LIMIT 100", 
+				var customerIDs []int64
+
+				// Claim items atomically using FOR UPDATE SKIP LOCKED to prevent duplicate dispatch
+				rows, err := dbPool.Query(ctx, `
+					UPDATE bulk_job_items
+					SET status = 'PROCESSING'
+					WHERE id IN (
+						SELECT id FROM bulk_job_items
+						WHERE bulk_job_id = $1 AND status = 'PENDING'
+						ORDER BY id
+						LIMIT 100
+						FOR UPDATE SKIP LOCKED
+					)
+					RETURNING customer_id`, 
 					jobID)
 				if err != nil {
-					log.Printf("Coordinator Error: Failed to query job items for %s: %v", jobID, err)
+					log.Printf("Coordinator Error: Failed to claim job items for %s: %v", jobID, err)
 					break
 				}
 
-				var customerIDs []int64
 				for rows.Next() {
 					var cid int64
 					if err := rows.Scan(&cid); err == nil {
@@ -126,6 +154,16 @@ func runWorker(ctx context.Context, dbPool *pgxpool.Pool, rdb *redis.Client, wor
 
 func processWorkItem(ctx context.Context, dbPool *pgxpool.Pool, rdb *redis.Client, item WorkItem) {
 	start := time.Now()
+
+	// Panic recovery to log and mark item as failed instead of crashing worker process
+	defer func() {
+		if r := recover(); r != nil {
+			errMsgs := fmt.Sprintf("Panic recovered: %v", r)
+			log.Printf("Worker Panic: %s", errMsgs)
+			updateJobProgress(ctx, dbPool, item.JobID, item.CustomerID, false, errMsgs)
+			logPitchEvent(ctx, dbPool, item.CustomerID, "FAILED", "panic", 0, 0, start, errMsgs)
+		}
+	}()
 
 	// 1. Fetch customer details
 	details, err := FetchCustomerDetails(ctx, dbPool, item.CustomerID)
