@@ -1,0 +1,451 @@
+openapi: 3.0.3
+info:
+  title: Customer Retention Sales Platform API
+  description: API for managing expiring customer contracts and generating personalized recontract pitches using LLMs at scale.
+  version: 1.0.0
+servers:
+  - url: /api/v1
+    description: Local Server
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: Returns the status of the API service.
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+
+  /customers:
+    get:
+      summary: List Customers
+      description: Browse, search, filter, and sort expiring customer contracts with cursor pagination.
+      parameters:
+        - name: search
+          in: query
+          description: Fuzzy name search (matches using GIN trigram index)
+          required: false
+          schema:
+            type: string
+        - name: plan
+          in: query
+          description: Filter by customer plan name
+          required: false
+          schema:
+            type: string
+        - name: expires_before
+          in: query
+          description: Filter contracts expiring on or before date (YYYY-MM-DD)
+          required: false
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          description: Keyset pagination cursor token
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Number of items per page
+          required: false
+          schema:
+            type: integer
+            default: 15
+      responses:
+        '200':
+          description: A list of customers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CustomerListItem'
+                  next_cursor:
+                    type: string
+                    example: 2026-07-15T00:00:00Z|1045
+        '400':
+          $ref: '#/components/responses/400Error'
+
+  /customers/{customer_id}:
+    get:
+      summary: Get Customer Details
+      description: Retrieves a specific customer's profile, including their contract status and month-by-month internet usage history.
+      parameters:
+        - name: customer_id
+          in: path
+          description: The ID of the customer
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Detailed customer profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerDetails'
+        '404':
+          $ref: '#/components/responses/404Error'
+
+  /customers/{customer_id}/pitch:
+    post:
+      summary: Generate Personalized Pitch
+      description: Generates a recontract sales pitch based on the customer's demographics and usage trends. Utilizes write-through caching (Redis + PostgreSQL) to prevent redundant Gemini API charges.
+      parameters:
+        - name: customer_id
+          in: path
+          description: The ID of the customer
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        description: Empty body is accepted since pitch parameters are derived from DB customer details.
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Personalized pitch generated or retrieved from cache
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  customer_id:
+                    type: integer
+                    example: 45
+                  pitch:
+                    type: string
+                    example: "Hi Zach, thank you for being with us on our 1Gbps plan! We noticed you utilize your connection heavily, averaging 560GB downloads. Consider recontracting now to lock in your $59.99 rate."
+                  generated_at:
+                    type: string
+                    format: date-time
+                    example: "2026-06-22T02:40:00Z"
+                  cached:
+                    type: boolean
+                    example: true
+                  model:
+                    type: string
+                    example: "gemini-1.5-flash"
+        '404':
+          $ref: '#/components/responses/404Error'
+    get:
+      summary: Get Existing Pitch
+      description: Returns the previously generated pitch for the customer. Does not trigger a new generation.
+      parameters:
+        - name: customer_id
+          in: path
+          description: The ID of the customer
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Existing pitch payload
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  customer_id:
+                    type: integer
+                    example: 45
+                  pitch:
+                    type: string
+                    example: "Hi Zach..."
+                  generated_at:
+                    type: string
+                    format: date-time
+                    example: "2026-06-22T02:40:00Z"
+        '404':
+          $ref: '#/components/responses/404Error'
+
+  /bulk-pitches:
+    post:
+      summary: Create Bulk Pitch Job
+      description: Triggers an asynchronous campaign to generate pitches for a filtered segment of customers. Returns immediately and queues tasks for background workers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                filters:
+                  type: object
+                  properties:
+                    expires_before:
+                      type: string
+                      format: date
+                      example: "2026-07-31"
+                    plan_name:
+                      type: string
+                      example: "1Gbps"
+              required:
+                - filters
+      responses:
+        '200':
+          description: Campaign successfully created and queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:
+                    type: string
+                    format: uuid
+                    example: "a239a108-9dda-419c-acea-5c5ebcc98ed6"
+                  status:
+                    type: string
+                    example: "PENDING"
+        '400':
+          $ref: '#/components/responses/400Error'
+        '429':
+          $ref: '#/components/responses/429Error'
+    get:
+      summary: List Bulk Pitch Jobs
+      description: Returns a history of all bulk job campaigns and their processing stats.
+      responses:
+        '200':
+          description: A list of bulk jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BulkJob'
+
+  /bulk-pitches/{job_id}:
+    get:
+      summary: Get Bulk Job Status
+      description: Retrieves the current status, total item count, and completed/failed counts for an active bulk campaign.
+      parameters:
+        - name: job_id
+          in: path
+          description: The UUID of the bulk job
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Job status counters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkJob'
+        '404':
+          $ref: '#/components/responses/404Error'
+
+  /bulk-pitches/{job_id}/items:
+    get:
+      summary: Get Bulk Job Items
+      description: Returns a list of individual customer processing results inside the bulk campaign, with optional status filtering and cursor pagination.
+      parameters:
+        - name: job_id
+          in: path
+          description: The UUID of the bulk job
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          description: Filter results by status
+          required: false
+          schema:
+            type: string
+            enum: [PENDING, PROCESSING, SUCCESS, FAILED]
+        - name: cursor
+          in: query
+          description: Keyset pagination cursor (item ID)
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Number of items per page
+          required: false
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Paginated job items list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BulkJobItem'
+                  next_cursor:
+                    type: string
+                    example: "4502"
+        '404':
+          $ref: '#/components/responses/404Error'
+
+components:
+  schemas:
+    CustomerListItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: "John Tan"
+        plan_name:
+          type: string
+          example: "1Gbps"
+        contract_end_date:
+          type: string
+          format: date
+          example: "2026-07-01"
+
+    CustomerDetails:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        customer_number:
+          type: string
+          example: "CN-1002934"
+        name:
+          type: string
+          example: "John Tan"
+        plan_name:
+          type: string
+          example: "1Gbps"
+        monthly_fee:
+          type: number
+          format: double
+          example: 59.99
+        tenure_months:
+          type: integer
+          example: 24
+        contract_start_date:
+          type: string
+          format: date
+          example: "2024-07-01"
+        contract_end_date:
+          type: string
+          format: date
+          example: "2026-07-01"
+        usage_history:
+          type: array
+          items:
+            $ref: '#/components/schemas/UsageItem'
+
+    UsageItem:
+      type: object
+      properties:
+        month:
+          type: string
+          example: "2026-05"
+        download_gb:
+          type: number
+          format: double
+          example: 540.23
+        upload_gb:
+          type: number
+          format: double
+          example: 120.45
+
+    BulkJob:
+      type: object
+      properties:
+        job_id:
+          type: string
+          format: uuid
+          example: "a239a108-9dda-419c-acea-5c5ebcc98ed6"
+        status:
+          type: string
+          example: "COMPLETED"
+        total_count:
+          type: integer
+          example: 125000
+        completed_count:
+          type: integer
+          example: 125000
+        failed_count:
+          type: integer
+          example: 0
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-06-21T17:38:19Z"
+
+    BulkJobItem:
+      type: object
+      properties:
+        customer_id:
+          type: integer
+          example: 14502
+        status:
+          type: string
+          example: "SUCCESS"
+        error_message:
+          type: string
+          example: null
+          nullable: true
+
+  responses:
+    400Error:
+      description: Invalid request parameters
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: "invalid_request"
+              message:
+                type: string
+                example: "expires_before is invalid"
+
+    404Error:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: "not_found"
+
+    429Error:
+      description: Queue capacity exceeded (backpressure)
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: "rate_limited"
+              message:
+                type: string
+                example: "Too many active bulk jobs. Please try again later."

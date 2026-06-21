@@ -51,6 +51,7 @@ func (s *Server) SetupRouter() *gin.Engine {
 	// Serve Static Files
 	r.Static("/static", "./static")
 	r.StaticFile("/", "./static/index.html")
+	r.StaticFile("/swagger", "./static/swagger.html")
 
 	// API V1 Group
 	v1 := r.Group("/api/v1")

@@ -2,6 +2,33 @@
 
 An internal customer retention portal built for scale to help retention agents browse expiring contracts, query details, view usage history trends, and generate personalized recontract sales pitches using LLMs.
 
+```text
+├── db/                          # Database migrations & schemas
+│   ├── schema.sql               # PostgreSQL tables, indices, and extensions definitions
+│   └── seed.sql                 # High-speed data seeding script (500k customers + 1.5M usage history records)
+│
+├── internal/                    # Private application & business logic
+│   ├── config/                  # Multi-tiered configuration manager (JSON, Dotenv, and OS Env)
+│   ├── db/                      # Database client connection, tuning, and bootstrap logic
+│   ├── models/                  # Shared data transfer objects (DTOs) and DB mapping structs
+│   ├── llm/                     # Google Gemini LLM API client wrapper & template mock fallback
+│   ├── server/                  # HTTP controller actions, routes, and Gin server definitions
+│   └── worker/                  # Background worker threads & transactional atomic coordinator
+│
+├── static/                      # Static web assets and API documents
+│   ├── index.html               # Frontend single-page application dashboard
+│   ├── style.css                # Visual layout (glassmorphism UI styles)
+│   ├── app.js                   # Client-side reactivity, cursor-based sorting, and real-time polling
+│   ├── swagger.yaml             # OpenAPI 3.0 REST API specification
+│   └── swagger.html             # CDN-loaded Swagger UI documentation console
+│
+├── Dockerfile                   # Multi-stage production container build rules
+├── docker-compose.yml           # Decentralized infrastructure local runner config
+├── config.json                  # Local configuration keys and models options
+├── .env                         # Standard local environment variables template
+├── main.go                      # Application main entry point (starts server and worker processes)
+```
+
 ---
 
 ## 1. Quick Start
@@ -15,8 +42,9 @@ An internal customer retention portal built for scale to help retention agents b
    docker compose up -d --build
    ```
 2. Wait a few seconds for database startup and bootstrap. The system will automatically seed **500,000 customers** and **1,500,000 usage history records** on first-time boot. Seeding takes ~15–20 seconds.
-3. Open `http://localhost:8080` in your web browser.
-4. (Optional) To connect actual LLM endpoints rather than local mock templates, configure your API Key and target model in the `config.json` file, or via environment variables.
+3. Open the frontend dashboard at `http://localhost:8080` in your web browser.
+4. Open the API documentation page (Swagger UI) at `http://localhost:8080/swagger`.
+5. (Optional) To connect actual LLM endpoints rather than local mock templates, configure your API Key and target model in the `config.json` file, or via environment variables.
 
 ---
 
