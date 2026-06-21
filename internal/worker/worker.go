@@ -31,6 +31,12 @@ var RateLimiter = time.Tick(200 * time.Millisecond)
 
 // StartWorkerPool runs the background workers and the job coordinator.
 func StartWorkerPool(ctx context.Context, dbPool *pgxpool.Pool, rdb *redis.Client) {
+	// Reset orphaned PROCESSING jobs back to PENDING on startup so they resume processing
+	_, err := dbPool.Exec(ctx, "UPDATE bulk_jobs SET status = 'PENDING' WHERE status = 'PROCESSING'")
+	if err != nil {
+		log.Printf("Worker Pool Startup: Failed to reset orphaned processing jobs: %v", err)
+	}
+
 	// Start 10 workers to process individual work items
 	for i := 1; i <= 10; i++ {
 		go runWorker(ctx, dbPool, rdb, i)
@@ -68,12 +74,11 @@ func runCoordinator(ctx context.Context, dbPool *pgxpool.Pool) {
 				continue
 			}
 
-			// Read and dispatch items in chunks of 100 to avoid loading too many records in memory
-			var offset int
+			// Read and dispatch pending items in chunks of 100
 			for {
 				rows, err := dbPool.Query(ctx, 
-					"SELECT customer_id FROM bulk_job_items WHERE bulk_job_id = $1 ORDER BY id LIMIT 100 OFFSET $2", 
-					jobID, offset)
+					"SELECT customer_id FROM bulk_job_items WHERE bulk_job_id = $1 AND status = 'PENDING' ORDER BY id LIMIT 100", 
+					jobID)
 				if err != nil {
 					log.Printf("Coordinator Error: Failed to query job items for %s: %v", jobID, err)
 					break
@@ -89,7 +94,7 @@ func runCoordinator(ctx context.Context, dbPool *pgxpool.Pool) {
 				rows.Close()
 
 				if len(customerIDs) == 0 {
-					break // No more items
+					break // No more pending items
 				}
 
 				for _, cid := range customerIDs {
@@ -100,10 +105,8 @@ func runCoordinator(ctx context.Context, dbPool *pgxpool.Pool) {
 						// Queued successfully
 					}
 				}
-
-				offset += len(customerIDs)
 			}
-			log.Printf("Coordinator: Dispatched all %d items for job %s", offset, jobID)
+			log.Printf("Coordinator: Dispatched all items for job %s", jobID)
 		}
 	}
 }
@@ -130,6 +133,8 @@ func processWorkItem(ctx context.Context, dbPool *pgxpool.Pool, rdb *redis.Clien
 		errMsg := fmt.Sprintf("Failed to fetch customer: %v", err)
 		updateJobProgress(ctx, dbPool, item.JobID, item.CustomerID, false, errMsg)
 		logPitchEvent(ctx, dbPool, item.CustomerID, "FAILED", "", 0, 0, start, err.Error())
+		log.Printf(`{"customer_id": %d, "job_id": "%s", "status": "FAILED", "error": "%s", "latency_ms": %d}`,
+			item.CustomerID, item.JobID, errMsg, time.Since(start).Milliseconds())
 		return
 	}
 
@@ -139,6 +144,8 @@ func processWorkItem(ctx context.Context, dbPool *pgxpool.Pool, rdb *redis.Clien
 		updateJobProgress(ctx, dbPool, item.JobID, item.CustomerID, true, "")
 		// Log a successful event but mark it cached
 		logPitchEvent(ctx, dbPool, item.CustomerID, "SUCCESS", "cached", 0, 0, start, "")
+		log.Printf(`{"customer_id": %d, "job_id": "%s", "status": "SUCCESS (CACHED)", "latency_ms": %d}`,
+			item.CustomerID, item.JobID, time.Since(start).Milliseconds())
 		_ = cachedPitch
 		return
 	}
@@ -152,6 +159,8 @@ func processWorkItem(ctx context.Context, dbPool *pgxpool.Pool, rdb *redis.Clien
 		errMsg := fmt.Sprintf("LLM error: %v", err)
 		updateJobProgress(ctx, dbPool, item.JobID, item.CustomerID, false, errMsg)
 		logPitchEvent(ctx, dbPool, item.CustomerID, "FAILED", modelUsed, 0, 0, start, err.Error())
+		log.Printf(`{"customer_id": %d, "job_id": "%s", "status": "FAILED", "error": "%s", "latency_ms": %d}`,
+			item.CustomerID, item.JobID, errMsg, time.Since(start).Milliseconds())
 		return
 	}
 
@@ -160,7 +169,9 @@ func processWorkItem(ctx context.Context, dbPool *pgxpool.Pool, rdb *redis.Clien
 
 	// 6. Update progress and log success event
 	updateJobProgress(ctx, dbPool, item.JobID, item.CustomerID, true, "")
-	logPitchEvent(ctx, dbPool, item.CustomerID, "SUCCESS", modelUsed, len(details.FullName)/4 + 20, len(pitchText)/4, start, "")
+	logPitchEvent(ctx, dbPool, item.CustomerID, "SUCCESS", modelUsed, len(details.FullName)/4+20, len(pitchText)/4, start, "")
+	log.Printf(`{"customer_id": %d, "job_id": "%s", "status": "SUCCESS", "latency_ms": %d}`,
+		item.CustomerID, item.JobID, time.Since(start).Milliseconds())
 }
 
 // FetchCustomerDetails retrieves customer data and usage history.
