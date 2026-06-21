@@ -226,11 +226,11 @@ func (s *Server) handleGeneratePitch(c *gin.Context) {
 
 	// 2. Compute customer hash and check cache
 	hash := llm.ComputeCustomerHash(details)
-	if cachedPitch, hit := worker.GetCachedPitch(ctx, s.rdb, s.dbPool, customerID, hash); hit {
+	if cachedPitch, generatedAt, hit := worker.GetCachedPitch(ctx, s.rdb, s.dbPool, customerID, hash); hit {
 		c.JSON(http.StatusOK, models.Pitch{
 			CustomerID:  customerID,
 			PitchText:   cachedPitch,
-			GeneratedAt: time.Now(),
+			GeneratedAt: generatedAt,
 			Cached:      true,
 		})
 		return

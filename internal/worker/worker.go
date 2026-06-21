@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"time-retention/internal/llm"
@@ -134,7 +135,7 @@ func processWorkItem(ctx context.Context, dbPool *pgxpool.Pool, rdb *redis.Clien
 
 	// 2. Compute customer hash and check cache
 	hash := llm.ComputeCustomerHash(details)
-	if cachedPitch, hit := GetCachedPitch(ctx, rdb, dbPool, item.CustomerID, hash); hit {
+	if cachedPitch, _, hit := GetCachedPitch(ctx, rdb, dbPool, item.CustomerID, hash); hit {
 		updateJobProgress(ctx, dbPool, item.JobID, item.CustomerID, true, "")
 		// Log a successful event but mark it cached
 		logPitchEvent(ctx, dbPool, item.CustomerID, "SUCCESS", "cached", 0, 0, start, "")
@@ -201,47 +202,56 @@ func FetchCustomerDetails(ctx context.Context, dbPool *pgxpool.Pool, customerID 
 }
 
 // GetCachedPitch retrieves pitch from Redis or DB if hash matches.
-func GetCachedPitch(ctx context.Context, rdb *redis.Client, dbPool *pgxpool.Pool, customerID int64, hash string) (string, bool) {
+func GetCachedPitch(ctx context.Context, rdb *redis.Client, dbPool *pgxpool.Pool, customerID int64, hash string) (string, time.Time, bool) {
 	if rdb != nil {
 		key := fmt.Sprintf("pitch:%d:%s", customerID, hash)
 		val, err := rdb.Get(ctx, key).Result()
 		if err == nil {
-			return val, true
+			parts := strings.SplitN(val, "|", 2)
+			if len(parts) == 2 {
+				if t, err := time.Parse(time.RFC3339, parts[0]); err == nil {
+					return parts[1], t, true
+				}
+			}
 		}
 	}
 
 	var pitchText string
 	var cachedHash string
-	err := dbPool.QueryRow(ctx, "SELECT pitch_text, customer_data_hash FROM generated_pitches WHERE customer_id = $1", customerID).Scan(&pitchText, &cachedHash)
+	var generatedAt time.Time
+	err := dbPool.QueryRow(ctx, "SELECT pitch_text, customer_data_hash, generated_at FROM generated_pitches WHERE customer_id = $1", customerID).Scan(&pitchText, &cachedHash, &generatedAt)
 	if err == nil && cachedHash == hash {
 		if rdb != nil {
 			key := fmt.Sprintf("pitch:%d:%s", customerID, hash)
-			_ = rdb.Set(ctx, key, pitchText, 24*time.Hour)
+			val := fmt.Sprintf("%s|%s", generatedAt.Format(time.RFC3339), pitchText)
+			_ = rdb.Set(ctx, key, val, 24*time.Hour)
 		}
-		return pitchText, true
+		return pitchText, generatedAt, true
 	}
 
-	return "", false
+	return "", time.Time{}, false
 }
 
 // SetCachedPitch caches a pitch in DB and Redis.
 func SetCachedPitch(ctx context.Context, rdb *redis.Client, dbPool *pgxpool.Pool, customerID int64, hash string, pitchText string, modelName string) {
+	now := time.Now()
 	_, err := dbPool.Exec(ctx, `
 		INSERT INTO generated_pitches (customer_id, customer_data_hash, pitch_text, llm_model, generated_at)
-		VALUES ($1, $2, $3, $4, NOW())
+		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (customer_id) 
 		DO UPDATE SET customer_data_hash = EXCLUDED.customer_data_hash,
                       pitch_text = EXCLUDED.pitch_text,
                       llm_model = EXCLUDED.llm_model,
-                      generated_at = NOW()`,
-		customerID, hash, pitchText, modelName)
+                      generated_at = EXCLUDED.generated_at`,
+		customerID, hash, pitchText, modelName, now)
 	if err != nil {
 		log.Printf("Failed to cache pitch in database: %v", err)
 	}
 
 	if rdb != nil {
 		key := fmt.Sprintf("pitch:%d:%s", customerID, hash)
-		_ = rdb.Set(ctx, key, pitchText, 24*time.Hour)
+		val := fmt.Sprintf("%s|%s", now.Format(time.RFC3339), pitchText)
+		_ = rdb.Set(ctx, key, val, 24*time.Hour)
 	}
 }
 
