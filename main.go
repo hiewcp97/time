@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"time-retention/internal/config"
@@ -37,7 +38,11 @@ func main() {
 
 	// 3. Connect to Redis (optional fallback)
 	var rdb *redis.Client
-	opt, err := redis.ParseURL("redis://" + redisURL)
+	redisURLWithScheme := redisURL
+	if !strings.HasPrefix(redisURL, "redis://") && !strings.HasPrefix(redisURL, "rediss://") {
+		redisURLWithScheme = "redis://" + redisURL
+	}
+	opt, err := redis.ParseURL(redisURLWithScheme)
 	if err == nil {
 		rdb = redis.NewClient(opt)
 		// Test redis connection

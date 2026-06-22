@@ -267,7 +267,16 @@ Bulk generation requests run asynchronously in a worker pool.
 
 ### Deployment Pipelines
 1. **Local (Docker Compose)**: Compiles `api`, `worker`, `postgres`, and `redis` locally in isolated network structures using a standard `.env` configuration file.
-2. **Production Pipeline**: Automated Docker builds in GitHub Actions or CI/CD systems, push images to Container Registries, and deploy via Amazon ECS (Fargate), Kubernetes, or Fly.io.
+2. **Production Pipeline (Render Free Tier)**: We support automated deployment to **Render.com's Free Tier** using the `render.yaml` Blueprint file.
+   - **Infrastructure Mapping**: Automatically configures a Free Managed PostgreSQL database, a Free Managed Redis cache, and a unified Web Service running with `ROLE=both` (which executes the API router and background worker queue loops inside a single container instance to fit under Free Tier constraints).
+   - **Deployment Steps**:
+     1. Push your project repository to GitHub or GitLab.
+     2. Open your Render Dashboard, navigate to **Blueprints**, and click **New Blueprint Instance**.
+     3. Connect your repository.
+     4. Render will parse `render.yaml` and prompt you for configuration details. Input your `GEMINI_API_KEY` (or leave it blank to default to mock pitches).
+     5. Click **Deploy** to automatically configure, build, and deploy the entire environment.
+
+---
 
 ### Security Enforcements
 - Secrets and tokens loaded dynamically and masked in diagnostic outputs.

@@ -1,0 +1,37 @@
+services:
+  # A unified API + Worker service running on the Render Free Web Service tier
+  - type: web
+    name: time-retention-service
+    env: docker
+    dockerfilePath: Dockerfile
+    plan: free
+    port: 8080
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: ROLE
+        value: both # Runs both API server and worker threads inside a single container instance to fit Free Tier
+      - key: DATABASE_URL
+        fromDatabase:
+          name: retention-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: retention-redis
+          property: connectionString
+      - key: GEMINI_API_KEY
+        sync: false # Set manually in Render dashboard
+      - key: LLM_MODEL
+        value: gemini-1.5-flash
+
+# Managed database service on the Render Free database tier (90-day expiry limit)
+databases:
+  - name: retention-db
+    plan: free
+
+# Managed Redis instance on the Render Free cache tier
+redis:
+  - name: retention-redis
+    plan: free
+    ipAllowList: [] # Limit cache queries inside Render's private virtual network for security
