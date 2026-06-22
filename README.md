@@ -1,5 +1,8 @@
 # Customer Retention Sales Platform
 
+> [!NOTE]
+> **Live Production Deployment**: [https://time-retention-service.onrender.com](https://time-retention-service.onrender.com)
+
 An internal customer retention portal built for scale to help retention agents browse expiring contracts, query details, view usage history trends, and generate personalized recontract sales pitches using LLMs.
 
 ---
@@ -267,7 +270,7 @@ Bulk generation requests run asynchronously in a worker pool.
 
 ### Deployment Pipelines
 1. **Local (Docker Compose)**: Compiles `api`, `worker`, `postgres`, and `redis` locally in isolated network structures using a standard `.env` configuration file.
-2. **Production Pipeline (Render Free Tier)**: We support automated deployment to **Render.com's Free Tier** using the `render.yaml` Blueprint file.
+2. **Production Pipeline (Render Free Tier)**: We support automated deployment to **Render.com's Free Tier** using the `render.yaml` Blueprint file. The live platform is deployed at [https://time-retention-service.onrender.com](https://time-retention-service.onrender.com).
    - **Infrastructure Mapping**: Automatically configures a Free Managed PostgreSQL database, a Free Managed Redis cache, and a unified Web Service running with `ROLE=both` (which executes the API router and background worker queue loops inside a single container instance to fit under Free Tier constraints).
    - **Deployment Steps**:
      1. Push your project repository to GitHub or GitLab.
