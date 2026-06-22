@@ -15,8 +15,11 @@ func Connect(ctx context.Context, connStr string) (*pgxpool.Pool, error) {
 	var pool *pgxpool.Pool
 	var err error
 	for i := 0; i < 15; i++ {
-		config, err := pgxpool.ParseConfig(connStr)
-		if err == nil {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		config, parseErr := pgxpool.ParseConfig(connStr)
+		if parseErr == nil {
 			// Optimize connection settings for concurrent throughput
 			config.MaxConns = 50
 			config.MinConns = 5
@@ -28,9 +31,15 @@ func Connect(ctx context.Context, connStr string) (*pgxpool.Pool, error) {
 					return pool, nil
 				}
 			}
+		} else {
+			err = parseErr
 		}
 		log.Printf("Waiting for Postgres to be ready... (%d/15): %v", i+1, err)
-		time.Sleep(2 * time.Second)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
 	}
 	return nil, fmt.Errorf("could not connect to database: %w", err)
 }

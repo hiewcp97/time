@@ -19,6 +19,12 @@ An internal customer retention portal built for scale to help retention agents b
 4. Open the API documentation page (Swagger UI) at `http://localhost:8080/swagger` to inspect and execute API requests directly from localhost.
 5. (Optional) To connect actual LLM endpoints rather than local mock templates, configure your API Key and target model in the `config.json` file, or via environment variables.
 
+### Run the Unit Tests
+Execute the Go test suite inside a clean, temporary Alpine-Go container:
+```bash
+docker run --rm -v "$(pwd)":/app -w /app golang:1.23-alpine sh -c "go mod tidy && go test -v ./..."
+```
+
 ---
 
 ## 1.5 Configuration Management
