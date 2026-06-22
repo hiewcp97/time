@@ -5,7 +5,6 @@ services:
     env: docker
     dockerfilePath: Dockerfile
     plan: free
-    port: 8080
     envVars:
       - key: PORT
         value: 8080
@@ -17,7 +16,7 @@ services:
           property: connectionString
       - key: REDIS_URL
         fromService:
-          type: redis
+          type: keyvalue
           name: retention-redis
           property: connectionString
       - key: GEMINI_API_KEY
@@ -25,13 +24,13 @@ services:
       - key: LLM_MODEL
         value: gemini-1.5-flash
 
+  # Managed Key Value (Redis/Valkey) instance on the Render Free cache tier
+  - type: keyvalue
+    name: retention-redis
+    plan: free
+    ipAllowList: [] # Limit cache queries inside Render's private virtual network for security
+
 # Managed database service on the Render Free database tier (90-day expiry limit)
 databases:
   - name: retention-db
     plan: free
-
-# Managed Redis instance on the Render Free cache tier
-redis:
-  - name: retention-redis
-    plan: free
-    ipAllowList: [] # Limit cache queries inside Render's private virtual network for security
