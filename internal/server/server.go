@@ -362,13 +362,25 @@ func (s *Server) handleCreateBulkJob(c *gin.Context) {
 	}
 
 	// Set the total counts
-	_, err = tx.Exec(ctx, `
+	var totalCount int
+	err = tx.QueryRow(ctx, `
 		UPDATE bulk_jobs 
 		SET total_count = (SELECT COUNT(*) FROM bulk_job_items WHERE bulk_job_id = $1)
-		WHERE id = $1`, jobID)
+		WHERE id = $1
+		RETURNING total_count`, jobID).Scan(&totalCount)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error", "message": "Failed to count job items"})
 		return
+	}
+
+	status := "PENDING"
+	if totalCount == 0 {
+		status = "COMPLETED"
+		_, err = tx.Exec(ctx, "UPDATE bulk_jobs SET status = 'COMPLETED' WHERE id = $1", jobID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal_error", "message": "Failed to update job status"})
+			return
+		}
 	}
 
 	err = tx.Commit(ctx)
@@ -379,7 +391,7 @@ func (s *Server) handleCreateBulkJob(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"job_id": jobID,
-		"status": "PENDING",
+		"status": status,
 	})
 }
 

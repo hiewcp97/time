@@ -156,6 +156,7 @@ The repository is structured to separate concern and layer boundaries clearly:
 │
 ├── Dockerfile                   # Multi-stage production container build rules
 ├── docker-compose.yml           # Decentralized infrastructure local runner config
+├── render.yaml                  # Production environment Blueprint specification (Render.com)
 ├── config.json                  # Local configuration keys and models options
 ├── .env                         # Standard local environment variables template
 └── main.go                      # Application main entry point (starts server and worker processes)

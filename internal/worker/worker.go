@@ -84,10 +84,20 @@ func runCoordinator(ctx context.Context, dbPool *pgxpool.Pool) {
 
 			log.Printf("Coordinator: Found pending bulk job %s", jobID)
 
-			// Claim the job (Update status to PROCESSING)
-			_, err = dbPool.Exec(ctx, "UPDATE bulk_jobs SET status = 'PROCESSING' WHERE id = $1 AND status = 'PENDING'", jobID)
+			// Claim the job (Update status to COMPLETED if total_count is 0, else PROCESSING)
+			var totalCount int
+			err = dbPool.QueryRow(ctx, `
+				UPDATE bulk_jobs 
+				SET status = CASE WHEN total_count = 0 THEN 'COMPLETED' ELSE 'PROCESSING' END
+				WHERE id = $1 AND status = 'PENDING'
+				RETURNING total_count`, jobID).Scan(&totalCount)
 			if err != nil {
-				log.Printf("Coordinator Error: Failed to update job %s to PROCESSING: %v", jobID, err)
+				log.Printf("Coordinator Error: Failed to claim bulk job %s: %v", jobID, err)
+				continue
+			}
+
+			if totalCount == 0 {
+				log.Printf("Coordinator: Bulk job %s has 0 items. Marked as COMPLETED immediately.", jobID)
 				continue
 			}
 
